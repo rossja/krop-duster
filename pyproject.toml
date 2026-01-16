@@ -1,0 +1,101 @@
+[project]
+name = "krop-duster"
+version = "1.0.0"
+description = "Intelligent automated testing tool for AI red teamers to test LLM security controls against KROP attacks"
+authors = [
+    {name = "AI Red Team Security Tools"}
+]
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+keywords = ["security", "red-team", "ai-safety", "llm", "krop", "prompt-injection"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Security",
+]
+
+dependencies = [
+    # Core NLP & Analysis
+    "spacy>=3.7.0",
+    "transformers>=4.36.0",
+    "nltk>=3.8.1",
+
+    # Harmful Content Detection
+    "detoxify>=0.5.2",
+    "alt-profanity-check>=1.4.1",
+
+    # Tokenizers
+    "tiktoken>=0.5.2",
+    "sentencepiece>=0.1.99",
+
+    # Knowledge Graphs
+    "SPARQLWrapper>=2.0.0",
+    "requests>=2.31.0",
+    "requests-cache>=1.1.1",
+
+    # LLM Integration
+    "openai>=1.6.0",
+    "anthropic>=0.8.0",
+    "ollama>=0.1.6",
+
+    # Embeddings & Similarity
+    "sentence-transformers>=2.2.2",
+    "numpy>=1.24.0",
+    "scikit-learn>=1.3.0",
+
+    # CLI & UX
+    "click>=8.1.7",
+    "rich>=13.7.0",
+    "pydantic>=2.5.0",
+    "pydantic-settings>=2.1.0",
+
+    # Configuration
+    "pyyaml>=6.0.1",
+    "python-dotenv>=1.0.0",
+
+    # Storage & Caching
+    "sqlalchemy>=2.0.23",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "pytest-asyncio>=0.21.0",
+    "black>=23.12.0",
+    "ruff>=0.1.8",
+    "mypy>=1.7.0",
+    "ipython>=8.18.0",
+]
+
+[project.scripts]
+krop-duster = "krop_duster.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.black]
+line-length = 100
+target-version = ['py311']
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
