@@ -136,7 +136,7 @@ class GenerationConfig(BaseModel):
     enable_knowledge_graph: bool = Field(default=True, description="Enable knowledge graph integration")
     enable_llm: bool = Field(default=True, description="Enable LLM generation")
     enable_templates: bool = Field(default=True, description="Enable template-based generation")
-    min_semantic_similarity: float = Field(default=0.7, ge=0.0, le=1.0, description="Minimum semantic similarity")
+    min_semantic_similarity: float = Field(default=0.3, ge=0.0, le=1.0, description="Minimum semantic similarity")
 
 
 class KROPDusterConfig(BaseModel):

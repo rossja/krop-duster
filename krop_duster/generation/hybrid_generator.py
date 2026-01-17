@@ -176,6 +176,10 @@ class HybridGenerator:
                             relationships_used=[r.property for r in relationships[:3]],
                         )
 
+                        logger.debug(
+                            f"  Variant '{variant_text[:50]}...' - "
+                            f"similarity: {semantic_sim:.3f}, prob: {prob_score:.3f}"
+                        )
                         concept_variants.append(variant)
 
                 except Exception as e:
@@ -184,11 +188,19 @@ class HybridGenerator:
                     )
 
             # Filter by minimum semantic similarity
+            pre_filter_count = len(concept_variants)
             concept_variants = [
                 v
                 for v in concept_variants
                 if v.semantic_similarity >= self.config.generation.min_semantic_similarity
             ]
+            filtered_count = pre_filter_count - len(concept_variants)
+
+            if filtered_count > 0:
+                logger.info(
+                    f"Filtered out {filtered_count} variants with similarity "
+                    f"< {self.config.generation.min_semantic_similarity:.2f}"
+                )
 
             # Sort by probability score
             concept_variants.sort(key=lambda v: v.probability_score, reverse=True)
