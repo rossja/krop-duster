@@ -33,25 +33,22 @@ class NLPParser:
 
         Returns:
             Loaded spaCy model
+
+        Raises:
+            RuntimeError: If the model cannot be loaded
         """
         try:
             nlp = spacy.load(self.config.spacy_model)
             logger.info(f"Loaded spaCy model: {self.config.spacy_model}")
             return nlp
-        except OSError:
-            logger.warning(
-                f"Model {self.config.spacy_model} not found. "
-                "Attempting to download..."
+        except OSError as e:
+            error_msg = (
+                f"spaCy model '{self.config.spacy_model}' not found. "
+                f"Please ensure dependencies are installed by running 'uv sync'. "
+                f"Original error: {e}"
             )
-            # Try to download the model
-            import subprocess
-            subprocess.run(
-                ["python", "-m", "spacy", "download", self.config.spacy_model],
-                check=True,
-            )
-            nlp = spacy.load(self.config.spacy_model)
-            logger.info(f"Downloaded and loaded spaCy model: {self.config.spacy_model}")
-            return nlp
+            logger.error(error_msg)
+            raise RuntimeError(error_msg) from e
 
     def parse(self, text: str) -> Doc:
         """
