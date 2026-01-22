@@ -2,6 +2,7 @@
 Command-line interface for KROP Duster.
 """
 
+import json
 import logging
 import os
 import sys
@@ -26,6 +27,32 @@ from krop_duster.output.formatter import OutputFormatter
 
 console = Console()
 logger = logging.getLogger(__name__)
+
+
+def get_state_dir() -> Path:
+    """Get the KROP Duster state directory (~/.krop-duster)."""
+    state_dir = Path.home() / ".krop-duster"
+    state_dir.mkdir(exist_ok=True)
+    return state_dir
+
+
+def get_acceptance_state() -> bool:
+    """Check if user has previously accepted the legal notice."""
+    state_file = get_state_dir() / "state.json"
+    if state_file.exists():
+        try:
+            data = json.loads(state_file.read_text())
+            return data.get("legal_notice_accepted", False)
+        except (json.JSONDecodeError, IOError):
+            return False
+    return False
+
+
+def save_acceptance_state(accepted: bool) -> None:
+    """Save the user's acceptance of the legal notice."""
+    state_file = get_state_dir() / "state.json"
+    data = {"legal_notice_accepted": accepted}
+    state_file.write_text(json.dumps(data, indent=2))
 
 
 def show_authorization_warning() -> bool:
@@ -135,6 +162,11 @@ for any testing you conduct.
     help="Skip authorization warning (for testing only)",
 )
 @click.option(
+    "--reset-acceptance",
+    is_flag=True,
+    help="Reset legal notice acceptance and show warning again",
+)
+@click.option(
     "--log-level",
     type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR"], case_sensitive=False),
     default="WARNING",
@@ -154,6 +186,7 @@ def main(
     disable_kg: bool,
     verbose: bool,
     skip_warning: bool,
+    reset_acceptance: bool,
     log_level: str,
 ):
     """
@@ -187,11 +220,19 @@ def main(
         os.environ["TQDM_DISABLE"] = "1"
 
     try:
-        # Show authorization warning
+        # Handle authorization
+        if reset_acceptance:
+            save_acceptance_state(False)
+
         if not skip_warning:
-            if not show_authorization_warning():
-                console.print("[yellow]Authorization not accepted. Exiting.[/yellow]")
-                sys.exit(0)
+            if get_acceptance_state():
+                pass  # Already accepted, continue
+            else:
+                if not show_authorization_warning():
+                    console.print("[yellow]Authorization not accepted. Exiting.[/yellow]")
+                    sys.exit(0)
+                # Save acceptance for future runs
+                save_acceptance_state(True)
 
         # Get prompt
         if prompt_file:
