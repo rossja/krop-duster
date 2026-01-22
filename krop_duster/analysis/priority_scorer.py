@@ -88,6 +88,8 @@ class PriorityScorer:
             ViolationType.ILLEGAL_ACTIVITY: 0.95,
             ViolationType.TOXICITY: 0.9,
             ViolationType.NSFW: 0.9,
+            ViolationType.NSFW_LANGUAGE: 0.88,
+            ViolationType.PROFANITY: 0.85,
             ViolationType.TRADEMARK: 0.85,
             ViolationType.COPYRIGHT: 0.85,
             ViolationType.CONTENT_POLICY: 0.8,
@@ -137,6 +139,8 @@ class PriorityScorer:
             EntityType.ACTION: 0.95,
             EntityType.PLACE: 0.7,
             EntityType.ABSTRACT_CONCEPT: 0.75,
+            EntityType.TABOO_WORD: 0.9,  # High importance - likely to trigger filters
+            EntityType.CULTURAL_REFERENCE: 0.85,  # High importance - copyright concerns
             EntityType.OTHER: 0.5,
         }
 
@@ -167,6 +171,8 @@ class PriorityScorer:
             EntityType.PLACE: 0.4,  # Medium: location, features
             EntityType.ACTION: 0.5,  # Medium: can use metaphor, functional
             EntityType.ABSTRACT_CONCEPT: 0.6,  # Harder: fewer concrete relationships
+            EntityType.TABOO_WORD: 0.4,  # Medium: use euphemisms, metaphors
+            EntityType.CULTURAL_REFERENCE: 0.35,  # Medium-easy: Wikidata relationships available
             EntityType.OTHER: 0.7,  # Hardest: unknown type
         }
 

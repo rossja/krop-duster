@@ -46,7 +46,7 @@ class WikidataKnowledgeBase(KnowledgeBase):
             entity_id = self._find_entity_id(concept)
 
             if not entity_id:
-                logger.warning(f"No Wikidata entity found for: {concept}")
+                logger.debug(f"No Wikidata entity found for: {concept}")
                 return relationships
 
             # Query for properties and values
@@ -166,7 +166,7 @@ class WikidataKnowledgeBase(KnowledgeBase):
                 return entity_id
 
         except Exception as e:
-            logger.warning(f"Failed to find entity ID for '{concept}': {e}")
+            logger.debug(f"Failed to find entity ID for '{concept}': {e}")
 
         return None
 

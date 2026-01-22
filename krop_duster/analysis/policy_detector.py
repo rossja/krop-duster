@@ -333,9 +333,11 @@ class PolicyViolationDetector:
             ViolationType.VIOLENCE_HARM: 0.95,
             ViolationType.ILLEGAL_ACTIVITY: 0.95,
             ViolationType.TOXICITY: 0.9,
+            ViolationType.NSFW: 0.9,
+            ViolationType.NSFW_LANGUAGE: 0.88,
+            ViolationType.PROFANITY: 0.85,
             ViolationType.TRADEMARK: 0.85,
             ViolationType.COPYRIGHT: 0.85,
-            ViolationType.NSFW: 0.9,
             ViolationType.CONTENT_POLICY: 0.8,
         }
 

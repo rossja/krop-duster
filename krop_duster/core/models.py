@@ -16,6 +16,8 @@ class EntityType(str, Enum):
     PLACE = "place"
     ACTION = "action"
     ABSTRACT_CONCEPT = "abstract_concept"
+    TABOO_WORD = "taboo_word"
+    CULTURAL_REFERENCE = "cultural_reference"
     OTHER = "other"
 
 
@@ -31,6 +33,8 @@ class ViolationType(str, Enum):
     CBRN = "cbrn"
     TOXICITY = "toxicity"
     NSFW = "nsfw"
+    NSFW_LANGUAGE = "nsfw_language"
+    PROFANITY = "profanity"
 
 
 class ObfuscationStrategy(str, Enum):
@@ -127,6 +131,13 @@ class AnalysisConfig(BaseModel):
     min_priority_score: float = Field(default=0.3, ge=0.0, le=1.0, description="Minimum priority score to obfuscate")
     max_concepts: int = Field(default=10, ge=1, description="Maximum concepts to extract")
     enable_harmful_content_detection: bool = Field(default=True, description="Enable harmful content detection")
+    # Taboo word detection
+    enable_taboo_detection: bool = Field(default=True, description="Enable taboo/sensitive word detection")
+    enable_vbw_dataset: bool = Field(default=True, description="Use VBW (Very Bad Words) dataset for taboo detection")
+    vbw_severity_threshold: float = Field(default=0.5, ge=0.0, le=1.0, description="VBW severity threshold (0.5=medium, 0.7=high)")
+    # Cultural reference detection
+    enable_cultural_detection: bool = Field(default=True, description="Enable cultural reference detection")
+    enable_cultural_llm_detection: bool = Field(default=False, description="Use LLM for cultural reference detection (expensive)")
 
 
 class GenerationConfig(BaseModel):

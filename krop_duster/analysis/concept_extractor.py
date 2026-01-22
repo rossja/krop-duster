@@ -3,13 +3,15 @@ Main concept extraction orchestrator.
 """
 
 import logging
-from typing import List
+from typing import List, Optional
 
 from krop_duster.analysis.action_extractor import ActionExtractor
+from krop_duster.analysis.cultural_reference_detector import CulturalReferenceDetector
 from krop_duster.analysis.ner import NERExtractor
 from krop_duster.analysis.parser import NLPParser
 from krop_duster.analysis.policy_detector import PolicyViolationDetector
 from krop_duster.analysis.priority_scorer import PriorityScorer
+from krop_duster.analysis.taboo_detector import TabooWordDetector
 from krop_duster.core.models import (
     AnalysisConfig,
     AnalysisResult,
@@ -26,12 +28,13 @@ logger = logging.getLogger(__name__)
 class ConceptExtractor:
     """Main orchestrator for concept extraction and analysis."""
 
-    def __init__(self, config: AnalysisConfig):
+    def __init__(self, config: AnalysisConfig, wikidata: Optional[any] = None):
         """
         Initialize the concept extractor.
 
         Args:
             config: Analysis configuration
+            wikidata: Optional WikidataKnowledgeBase for cultural reference detection
         """
         self.config = config
         self.parser = NLPParser(config)
@@ -42,6 +45,24 @@ class ConceptExtractor:
         )
         self.priority_scorer = PriorityScorer()
 
+        # Initialize taboo word detector
+        self.taboo_detector = None
+        if config.enable_taboo_detection:
+            self.taboo_detector = TabooWordDetector(
+                enable_vbw=config.enable_vbw_dataset,
+                vbw_threshold=config.vbw_severity_threshold,
+            )
+            logger.info("Taboo word detector initialized")
+
+        # Initialize cultural reference detector
+        self.cultural_detector = None
+        if config.enable_cultural_detection:
+            self.cultural_detector = CulturalReferenceDetector(
+                wikidata=wikidata,
+                enable_llm=config.enable_cultural_llm_detection,
+            )
+            logger.info("Cultural reference detector initialized")
+
     def extract_concepts(self, text: str) -> AnalysisResult:
         """
         Extract and analyze concepts from text.
@@ -50,9 +71,11 @@ class ConceptExtractor:
         1. Parse text (tokenization, POS, dependencies)
         2. Extract named entities
         3. Extract harmful actions
-        4. Detect policy violations
-        5. Score priority for each concept
-        6. Classify and select strategies
+        4. Detect taboo words
+        5. Detect cultural references
+        6. Detect policy violations
+        7. Score priority for each concept
+        8. Classify and select strategies
 
         Args:
             text: Input text to analyze
@@ -78,7 +101,21 @@ class ConceptExtractor:
 
         logger.info(f"Extracted {len(actions)} harmful actions from text")
 
-        # Step 4: Detect policy violations (including action violations)
+        # Step 4: Detect taboo words
+        taboo_words = []
+        if self.taboo_detector:
+            taboo_words = self.taboo_detector.detect_taboo_words(doc)
+            logger.info(f"Detected {len(taboo_words)} taboo words from text")
+
+        # Step 5: Detect cultural references
+        cultural_refs = []
+        if self.cultural_detector:
+            # Pass known entity texts to avoid duplicates
+            known_texts = [e["text"] for e in entities]
+            cultural_refs = self.cultural_detector.detect_references(doc, known_texts)
+            logger.info(f"Detected {len(cultural_refs)} cultural references from text")
+
+        # Step 6: Detect policy violations (including action violations)
         concept_texts = [e["text"] for e in entities]
         violations = self.policy_detector.detect_violations(text, concept_texts, actions)
 
@@ -168,6 +205,82 @@ class ConceptExtractor:
 
                 concepts.append(concept)
 
+        # Process taboo words
+        for taboo in taboo_words:
+            # Build violations dict from taboo detection
+            taboo_violations = self._get_taboo_violations(taboo)
+
+            # Calculate filter likelihood
+            filter_likelihood = self.policy_detector.calculate_filter_likelihood(
+                taboo_violations
+            )
+
+            # Calculate priority score for taboo word
+            priority_score = self.priority_scorer.calculate_priority_score(
+                entity_type=EntityType.TABOO_WORD,
+                violations=taboo_violations,
+                filter_likelihood=filter_likelihood,
+                semantic_role="modifier",
+            )
+
+            # Only include if priority meets threshold
+            if priority_score >= self.config.min_priority_score:
+                # Select suggested strategies for taboo words
+                suggested_strategies = self._select_strategies(
+                    EntityType.TABOO_WORD, taboo_violations
+                )
+
+                concept = Concept(
+                    text=taboo["text"],
+                    entity_type=EntityType.TABOO_WORD,
+                    span=(taboo["start"], taboo["end"]),
+                    priority_score=priority_score,
+                    violation_types=[vt for vt in taboo_violations.keys()],
+                    filter_likelihood=filter_likelihood,
+                    semantic_role="modifier",
+                    suggested_strategies=suggested_strategies,
+                )
+
+                concepts.append(concept)
+
+        # Process cultural references
+        for ref in cultural_refs:
+            # Build violations dict from cultural reference detection
+            ref_violations = self._get_cultural_reference_violations(ref)
+
+            # Calculate filter likelihood
+            filter_likelihood = self.policy_detector.calculate_filter_likelihood(
+                ref_violations
+            )
+
+            # Calculate priority score for cultural reference
+            priority_score = self.priority_scorer.calculate_priority_score(
+                entity_type=EntityType.CULTURAL_REFERENCE,
+                violations=ref_violations,
+                filter_likelihood=filter_likelihood,
+                semantic_role="object",
+            )
+
+            # Only include if priority meets threshold
+            if priority_score >= self.config.min_priority_score:
+                # Select suggested strategies for cultural references
+                suggested_strategies = self._select_strategies(
+                    EntityType.CULTURAL_REFERENCE, ref_violations
+                )
+
+                concept = Concept(
+                    text=ref["text"],
+                    entity_type=EntityType.CULTURAL_REFERENCE,
+                    span=(ref["start"], ref["end"]),
+                    priority_score=priority_score,
+                    violation_types=[vt for vt in ref_violations.keys()],
+                    filter_likelihood=filter_likelihood,
+                    semantic_role="object",
+                    suggested_strategies=suggested_strategies,
+                )
+
+                concepts.append(concept)
+
         # Sort by priority score (descending)
         concepts.sort(key=lambda c: c.priority_score, reverse=True)
 
@@ -185,6 +298,8 @@ class ConceptExtractor:
             metadata={
                 "total_entities": len(entities),
                 "total_actions": len(actions),
+                "total_taboo_words": len(taboo_words),
+                "total_cultural_refs": len(cultural_refs),
                 "total_violations": sum(len(v) for v in violations.values()),
                 "violation_types": list(violations.keys()),
             },
@@ -250,6 +365,57 @@ class ConceptExtractor:
 
         return action_violations
 
+    def _get_taboo_violations(self, taboo: dict) -> dict:
+        """
+        Get violations specific to a taboo word.
+
+        Args:
+            taboo: Taboo word dict from TabooWordDetector
+
+        Returns:
+            Violations relevant to this taboo word
+        """
+        taboo_violations = {}
+
+        # Taboo words come with their violation type from TabooWordDetector
+        violation_type = taboo.get("violation_type")
+        if violation_type:
+            taboo_violations[violation_type] = [{
+                "type": "taboo_word",
+                "word": taboo["text"],
+                "category": taboo.get("category", "unknown"),
+                "severity": taboo.get("severity", "medium"),
+                "source": taboo.get("source", "unknown"),
+                "reason": f"Taboo word: {taboo['text']} ({taboo.get('category', 'unknown')})",
+            }]
+
+        return taboo_violations
+
+    def _get_cultural_reference_violations(self, ref: dict) -> dict:
+        """
+        Get violations specific to a cultural reference.
+
+        Args:
+            ref: Cultural reference dict from CulturalReferenceDetector
+
+        Returns:
+            Violations relevant to this cultural reference
+        """
+        ref_violations = {}
+
+        # Cultural references typically involve copyright
+        violation_type = ref.get("violation_type", ViolationType.COPYRIGHT)
+        ref_violations[violation_type] = [{
+            "type": "cultural_reference",
+            "text": ref["text"],
+            "source_work": ref.get("source_work", "Unknown"),
+            "reference_type": ref.get("reference_type", "cultural reference"),
+            "severity": "high",
+            "reason": f"Cultural reference: {ref['text']} (from {ref.get('source_work', 'Unknown')})",
+        }]
+
+        return ref_violations
+
     def _select_strategies(
         self, entity_type, violations: dict
     ) -> List[ObfuscationStrategy]:
@@ -296,12 +462,37 @@ class ConceptExtractor:
                 ObfuscationStrategy.FUNCTIONAL,
             ])
 
+        # Taboo words: use metaphor and functional strategies
+        # (describe the concept without using the word)
+        if entity_type == EntityType.TABOO_WORD:
+            strategies.extend([
+                ObfuscationStrategy.METAPHOR,
+                ObfuscationStrategy.FUNCTIONAL,
+                ObfuscationStrategy.INDIRECT,
+            ])
+
+        # Cultural references: use knowledge graph and indirect strategies
+        # (leverage Wikidata relationships)
+        if entity_type == EntityType.CULTURAL_REFERENCE:
+            strategies.extend([
+                ObfuscationStrategy.KNOWLEDGE_GRAPH,
+                ObfuscationStrategy.INDIRECT,
+                ObfuscationStrategy.FUNCTIONAL,
+            ])
+
         # Violation-based strategy selection
         if ViolationType.TRADEMARK in violations or ViolationType.COPYRIGHT in violations:
             # For trademark/copyright, prefer indirect methods
             strategies.extend([
                 ObfuscationStrategy.KNOWLEDGE_GRAPH,
                 ObfuscationStrategy.INDIRECT,
+            ])
+
+        # For NSFW/profanity, prefer euphemism strategies
+        if ViolationType.NSFW_LANGUAGE in violations or ViolationType.PROFANITY in violations:
+            strategies.extend([
+                ObfuscationStrategy.METAPHOR,
+                ObfuscationStrategy.FUNCTIONAL,
             ])
 
         # Default strategies if none selected

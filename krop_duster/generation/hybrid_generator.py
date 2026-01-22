@@ -4,7 +4,7 @@ Hybrid generation engine orchestrator.
 
 import logging
 import time
-from typing import List, Optional
+from typing import Callable, List, Optional
 
 from sentence_transformers import SentenceTransformer, util
 
@@ -93,7 +93,11 @@ class HybridGenerator:
             ),
         }
 
-    def generate(self, prompt: str) -> GenerationResult:
+    def generate(
+        self,
+        prompt: str,
+        status_callback: Optional[Callable[[str], None]] = None,
+    ) -> GenerationResult:
         """
         Generate KROP attack variants from input prompt.
 
@@ -103,26 +107,36 @@ class HybridGenerator:
         3. Generate obfuscation variants for each concept
         4. Score and rank variants
         5. Construct attack prompts
+        6. Polish grammar
 
         Args:
             prompt: Input goal/payload prompt
+            status_callback: Optional callback for progress updates
 
         Returns:
             Generation result with attack prompts
         """
         start_time = time.time()
 
+        def update_status(msg: str) -> None:
+            """Update status via callback if provided."""
+            if status_callback:
+                status_callback(msg)
+
         logger.info(f"Starting generation for prompt: {prompt[:100]}...")
 
         # Step 1: Extract concepts
+        update_status("Extracting concepts...")
         analysis = self.concept_extractor.extract_concepts(prompt)
 
         logger.info(f"Extracted {len(analysis.concepts)} concepts to obfuscate")
 
         # Step 2 & 3: Generate obfuscation variants for each concept
         all_variants = {}
+        total_concepts = len(analysis.concepts)
 
-        for concept in analysis.concepts:
+        for i, concept in enumerate(analysis.concepts, 1):
+            update_status(f"Processing concept {i}/{total_concepts}: {concept.text}")
             logger.info(
                 f"Generating variants for concept: {concept.text} "
                 f"(priority: {concept.priority_score:.2f})"
@@ -211,9 +225,11 @@ class HybridGenerator:
                 f"Generated {len(concept_variants)} variants for {concept.text}"
             )
 
-        # Step 4: Construct attack prompts
+        # Step 4: Construct attack prompts and polish grammar
+        update_status("Constructing attack prompts...")
         attack_prompts = self._construct_attack_prompts(prompt, all_variants)
 
+        update_status("Finalizing results...")
         generation_time = time.time() - start_time
 
         logger.info(
@@ -307,6 +323,9 @@ class HybridGenerator:
                     all_strategies.append(best_variant.strategy.value)
 
             if all_variants:
+                # Polish grammar to fix issues from string replacement
+                combined_text = self._polish_grammar(combined_text)
+
                 # Calculate combined quality score (average of all variants)
                 combined_score = sum(v.quality_score for v in all_variants) / len(all_variants)
 
@@ -323,6 +342,7 @@ class HybridGenerator:
                     metadata={
                         "type": "combined",
                         "strategies": all_strategies,
+                        "grammar_polished": True,
                     },
                 )
 
@@ -337,6 +357,9 @@ class HybridGenerator:
 
                 # Replace concept in original prompt
                 attack_text = original_prompt.replace(concept_text, best_variant.obfuscated_text)
+
+                # Polish grammar for individual variant too
+                attack_text = self._polish_grammar(attack_text)
 
                 # Calculate total tokens
                 total_tokens = self.tokenizer.count_tokens(attack_text)
@@ -368,3 +391,93 @@ class HybridGenerator:
                 attack_prompts.append(combined_prompt)
 
         return attack_prompts
+
+    def _polish_grammar(self, text: str) -> str:
+        """
+        Polish grammar of attack prompt while preserving meaning.
+
+        Uses the LLM to fix grammatical issues like duplicate articles
+        ("a A magical") that arise from string replacement.
+
+        Args:
+            text: Raw attack prompt text
+
+        Returns:
+            Grammatically corrected text
+        """
+        if not self.llm_client:
+            # Fallback: basic cleanup without LLM
+            return self._basic_grammar_cleanup(text)
+
+        prompt = f"""You are a grammar editor. Fix ONLY grammatical issues in the text below.
+
+Common issues to fix:
+- Duplicate articles: "a A" should become "a", "an A" should become "an"
+- Article-noun agreement: "a unique" not "an unique"
+- Capitalization after periods
+- Run-on sentences
+
+Rules:
+1. Keep ALL descriptive content exactly as written
+2. Do NOT shorten or summarize anything
+3. Do NOT add new content
+4. ONLY fix grammar and article issues
+5. Return ONLY the corrected text, nothing else
+
+Text to fix:
+{text}
+
+Corrected text:"""
+
+        try:
+            # Use a reasonable token limit based on input length
+            max_tokens = max(300, len(text.split()) * 3)
+            corrected = self.llm_client.generate(prompt, max_tokens=max_tokens)
+
+            # Clean up the response - remove any leading/trailing whitespace
+            corrected = corrected.strip()
+
+            # Remove any "Corrected text:" prefix if the LLM included it
+            if corrected.lower().startswith("corrected text:"):
+                corrected = corrected[15:].strip()
+
+            # Sanity check: if the response is too short or empty, use basic cleanup
+            if len(corrected) < len(text) * 0.5:
+                logger.debug("Grammar polish returned suspiciously short text, using basic cleanup")
+                return self._basic_grammar_cleanup(text)
+
+            logger.debug(f"Grammar polished: '{text[:50]}...' -> '{corrected[:50]}...'")
+            return corrected
+
+        except Exception as e:
+            logger.debug(f"Grammar polish failed: {e}, using basic cleanup")
+            return self._basic_grammar_cleanup(text)
+
+    def _basic_grammar_cleanup(self, text: str) -> str:
+        """
+        Basic grammar cleanup without LLM.
+
+        Fixes common issues like duplicate articles.
+
+        Args:
+            text: Text to clean up
+
+        Returns:
+            Cleaned up text
+        """
+        import re
+
+        # Fix duplicate articles: "a A" -> "a", "an A" -> "an", etc.
+        # Pattern matches: "a A", "a An", "an A", "an An", "the The"
+        text = re.sub(r'\b(a|an|the)\s+(A|An|The)\b', r'\1', text, flags=re.IGNORECASE)
+
+        # Fix "a A" at start of text (case sensitive for proper nouns starting sentences)
+        text = re.sub(r'^(Write me )(a|an) (A|An) ', r'\1\2 ', text)
+
+        # Fix other common patterns: "me a A" -> "me a"
+        text = re.sub(r'(\s)(a|an)\s+(A|An)\s+', r'\1\2 ', text)
+
+        # Clean up any double spaces
+        text = re.sub(r'  +', ' ', text)
+
+        return text

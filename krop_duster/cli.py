@@ -12,6 +12,7 @@ from typing import Optional
 import click
 from rich.console import Console
 from rich.panel import Panel
+from rich.status import Status
 
 from krop_duster.core.models import (
     AnalysisConfig,
@@ -292,9 +293,16 @@ def main(
         console.print("[cyan]Initializing KROP Duster...[/cyan]")
         generator = HybridGenerator(config)
 
-        # Generate attacks
-        console.print(f"[cyan]Analyzing prompt and generating attack variants...[/cyan]")
-        result = generator.generate(prompt_text)
+        # Generate attacks with progress indicator
+        with Status(
+            "[cyan]Starting analysis...[/cyan]",
+            spinner="dots",
+            console=console,
+        ) as status:
+            def update_status(msg: str) -> None:
+                status.update(f"[cyan]{msg}[/cyan]")
+
+            result = generator.generate(prompt_text, status_callback=update_status)
 
         # Format and display output
         formatter = OutputFormatter(verbose=verbose)
