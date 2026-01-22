@@ -276,6 +276,9 @@ class HybridGenerator:
         """
         Construct complete attack prompts with obfuscations.
 
+        Creates a combined prompt that obfuscates ALL concepts together (primary),
+        and optionally includes individual per-concept prompts.
+
         Args:
             original_prompt: Original prompt
             variants_by_concept: Dictionary mapping concept to variants
@@ -284,36 +287,84 @@ class HybridGenerator:
             List of attack prompts
         """
         attack_prompts = []
+        combined_prompt = None
 
-        # For MVP, create one attack prompt per concept using its best variant
-        for concept_text, variants in variants_by_concept.items():
-            if not variants:
-                continue
+        # 1. Create COMBINED attack prompt (all concepts obfuscated together)
+        if variants_by_concept:
+            combined_text = original_prompt
+            all_variants = []
+            all_concepts = []
+            all_strategies = []
 
-            # Use best variant (highest probability score)
-            best_variant = variants[0]
+            for concept_text, variants in variants_by_concept.items():
+                if variants:
+                    best_variant = variants[0]
+                    combined_text = combined_text.replace(
+                        concept_text, best_variant.obfuscated_text
+                    )
+                    all_variants.append(best_variant)
+                    all_concepts.append(concept_text)
+                    all_strategies.append(best_variant.strategy.value)
 
-            # Replace concept in original prompt
-            attack_text = original_prompt.replace(concept_text, best_variant.obfuscated_text)
+            if all_variants:
+                # Calculate combined probability score (average of all variants)
+                combined_score = sum(v.probability_score for v in all_variants) / len(all_variants)
 
-            # Calculate total tokens
-            total_tokens = self.tokenizer.count_tokens(attack_text)
+                # Calculate total tokens
+                total_tokens = self.tokenizer.count_tokens(combined_text)
 
-            attack_prompt = AttackPrompt(
-                original_prompt=original_prompt,
-                attack_prompt=attack_text,
-                concepts_obfuscated=[concept_text],
-                variants_used=[best_variant],
-                total_tokens=total_tokens,
-                probability_score=best_variant.probability_score,
-                metadata={
-                    "strategy": best_variant.strategy.value,
-                },
-            )
+                combined_prompt = AttackPrompt(
+                    original_prompt=original_prompt,
+                    attack_prompt=combined_text,
+                    concepts_obfuscated=all_concepts,
+                    variants_used=all_variants,
+                    total_tokens=total_tokens,
+                    probability_score=combined_score,
+                    metadata={
+                        "type": "combined",
+                        "strategies": all_strategies,
+                    },
+                )
 
-            attack_prompts.append(attack_prompt)
+        # 2. If showing individual variants, add them first, then combined last
+        if self.config.generation.include_individual_variants:
+            for concept_text, variants in variants_by_concept.items():
+                if not variants:
+                    continue
 
-        # Sort by probability score
-        attack_prompts.sort(key=lambda ap: ap.probability_score, reverse=True)
+                # Use best variant (highest probability score)
+                best_variant = variants[0]
+
+                # Replace concept in original prompt
+                attack_text = original_prompt.replace(concept_text, best_variant.obfuscated_text)
+
+                # Calculate total tokens
+                total_tokens = self.tokenizer.count_tokens(attack_text)
+
+                attack_prompt = AttackPrompt(
+                    original_prompt=original_prompt,
+                    attack_prompt=attack_text,
+                    concepts_obfuscated=[concept_text],
+                    variants_used=[best_variant],
+                    total_tokens=total_tokens,
+                    probability_score=best_variant.probability_score,
+                    metadata={
+                        "type": "individual",
+                        "strategy": best_variant.strategy.value,
+                    },
+                )
+
+                attack_prompts.append(attack_prompt)
+
+            # Sort individual prompts by probability score
+            attack_prompts.sort(key=lambda ap: ap.probability_score, reverse=True)
+
+            # Add combined prompt at the end
+            if combined_prompt:
+                attack_prompts.append(combined_prompt)
+        else:
+            # Default: only show combined prompt
+            if combined_prompt:
+                attack_prompts.append(combined_prompt)
 
         return attack_prompts

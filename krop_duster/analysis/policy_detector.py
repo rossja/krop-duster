@@ -104,13 +104,16 @@ class PolicyViolationDetector:
             ],
         }
 
-    def detect_violations(self, text: str, concepts: List[str]) -> Dict[str, List[dict]]:
+    def detect_violations(
+        self, text: str, concepts: List[str], actions: Optional[List[dict]] = None
+    ) -> Dict[str, List[dict]]:
         """
         Detect all types of violations in text and concepts.
 
         Args:
             text: Input text to analyze
             concepts: List of concept texts
+            actions: Optional list of action dicts from ActionExtractor
 
         Returns:
             Dictionary of violations by type
@@ -143,7 +146,74 @@ class PolicyViolationDetector:
             if illegal_violations:
                 violations[ViolationType.ILLEGAL_ACTIVITY] = illegal_violations
 
+        # Check harmful actions if provided
+        if actions:
+            action_violations = self._detect_action_violations(actions)
+            # Merge action violations into existing violations
+            for violation_type, violation_list in action_violations.items():
+                if violation_type in violations:
+                    violations[violation_type].extend(violation_list)
+                else:
+                    violations[violation_type] = violation_list
+
         return violations
+
+    def _detect_action_violations(self, actions: List[dict]) -> Dict[str, List[dict]]:
+        """
+        Detect violations from extracted harmful actions.
+
+        Args:
+            actions: List of action dicts from ActionExtractor
+
+        Returns:
+            Dictionary of violations by type
+        """
+        violations: Dict[str, List[dict]] = {}
+
+        for action in actions:
+            violation_type = action.get("violation_type")
+            if not violation_type:
+                continue
+
+            violation = {
+                "type": "harmful_action",
+                "action": action["text"],
+                "category": action.get("category", "unknown"),
+                "severity": action.get("severity", "medium"),
+                "reason": f"Harmful action detected: {action['text']} ({action.get('category', 'unknown')})",
+            }
+
+            if violation_type in violations:
+                violations[violation_type].append(violation)
+            else:
+                violations[violation_type] = [violation]
+
+        return violations
+
+    def get_action_violations(self, action_text: str, action_info: dict) -> Dict[str, List[dict]]:
+        """
+        Get violations for a specific action.
+
+        Args:
+            action_text: The action text
+            action_info: Action info dict with category, violation_type, severity
+
+        Returns:
+            Dictionary of violations for this action
+        """
+        violation_type = action_info.get("violation_type")
+        if not violation_type:
+            return {}
+
+        return {
+            violation_type: [{
+                "type": "harmful_action",
+                "action": action_text,
+                "category": action_info.get("category", "unknown"),
+                "severity": action_info.get("severity", "medium"),
+                "reason": f"Harmful action: {action_text}",
+            }]
+        }
 
     def _detect_trademark(self, text: str, concepts: List[str]) -> List[dict]:
         """Detect trademark/copyright violations."""
@@ -266,6 +336,7 @@ class PolicyViolationDetector:
             ViolationType.TRADEMARK: 0.85,
             ViolationType.COPYRIGHT: 0.85,
             ViolationType.NSFW: 0.9,
+            ViolationType.CONTENT_POLICY: 0.8,
         }
 
         max_likelihood = 0.0

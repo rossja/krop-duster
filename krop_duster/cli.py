@@ -150,6 +150,11 @@ for any testing you conduct.
     help="Disable knowledge graph integration",
 )
 @click.option(
+    "--show-individual",
+    is_flag=True,
+    help="Show individual per-concept variants in addition to combined output",
+)
+@click.option(
     "--verbose",
     "-v",
     is_flag=True,
@@ -184,6 +189,7 @@ def main(
     max_variants: int,
     disable_llm: bool,
     disable_kg: bool,
+    show_individual: bool,
     verbose: bool,
     skip_warning: bool,
     reset_acceptance: bool,
@@ -259,6 +265,7 @@ def main(
             max_variants_per_concept=max_variants,
             enable_llm=not disable_llm,
             enable_knowledge_graph=not disable_kg,
+            include_individual_variants=show_individual,
         )
 
         config = KROPDusterConfig(

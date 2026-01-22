@@ -137,6 +137,7 @@ class GenerationConfig(BaseModel):
     enable_llm: bool = Field(default=True, description="Enable LLM generation")
     enable_templates: bool = Field(default=True, description="Enable template-based generation")
     min_semantic_similarity: float = Field(default=0.3, ge=0.0, le=1.0, description="Minimum semantic similarity")
+    include_individual_variants: bool = Field(default=False, description="Include individual per-concept variants in addition to combined")
 
 
 class KROPDusterConfig(BaseModel):

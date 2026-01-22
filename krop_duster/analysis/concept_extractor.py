@@ -5,6 +5,7 @@ Main concept extraction orchestrator.
 import logging
 from typing import List
 
+from krop_duster.analysis.action_extractor import ActionExtractor
 from krop_duster.analysis.ner import NERExtractor
 from krop_duster.analysis.parser import NLPParser
 from krop_duster.analysis.policy_detector import PolicyViolationDetector
@@ -13,7 +14,9 @@ from krop_duster.core.models import (
     AnalysisConfig,
     AnalysisResult,
     Concept,
+    EntityType,
     ObfuscationStrategy,
+    ViolationType,
 )
 
 
@@ -33,6 +36,7 @@ class ConceptExtractor:
         self.config = config
         self.parser = NLPParser(config)
         self.ner = NERExtractor()
+        self.action_extractor = ActionExtractor()
         self.policy_detector = PolicyViolationDetector(
             enable_harmful_content_detection=config.enable_harmful_content_detection
         )
@@ -45,9 +49,10 @@ class ConceptExtractor:
         Pipeline:
         1. Parse text (tokenization, POS, dependencies)
         2. Extract named entities
-        3. Detect policy violations
-        4. Score priority for each concept
-        5. Classify and select strategies
+        3. Extract harmful actions
+        4. Detect policy violations
+        5. Score priority for each concept
+        6. Classify and select strategies
 
         Args:
             text: Input text to analyze
@@ -68,15 +73,21 @@ class ConceptExtractor:
 
         logger.info(f"Extracted {len(entities)} entities from text")
 
-        # Step 3: Detect policy violations
+        # Step 3: Extract harmful actions
+        actions = self.action_extractor.extract_actions(doc)
+
+        logger.info(f"Extracted {len(actions)} harmful actions from text")
+
+        # Step 4: Detect policy violations (including action violations)
         concept_texts = [e["text"] for e in entities]
-        violations = self.policy_detector.detect_violations(text, concept_texts)
+        violations = self.policy_detector.detect_violations(text, concept_texts, actions)
 
         logger.info(f"Detected {len(violations)} violation types")
 
-        # Step 4: Create Concept objects with priority scores
+        # Step 5: Create Concept objects with priority scores
         concepts = []
 
+        # Process named entities
         for entity in entities:
             # Get entity-specific violations
             entity_violations = self._get_entity_violations(entity["text"], violations)
@@ -119,6 +130,44 @@ class ConceptExtractor:
 
                 concepts.append(concept)
 
+        # Process harmful actions
+        for action in actions:
+            # Get action-specific violations
+            action_violations = self._get_action_violations(action)
+
+            # Calculate filter likelihood
+            filter_likelihood = self.policy_detector.calculate_filter_likelihood(
+                action_violations
+            )
+
+            # Calculate priority score for action
+            priority_score = self.priority_scorer.calculate_priority_score(
+                entity_type=EntityType.ACTION,
+                violations=action_violations,
+                filter_likelihood=filter_likelihood,
+                semantic_role="action",
+            )
+
+            # Only include if priority meets threshold
+            if priority_score >= self.config.min_priority_score:
+                # Select suggested strategies for actions
+                suggested_strategies = self._select_strategies(
+                    EntityType.ACTION, action_violations
+                )
+
+                concept = Concept(
+                    text=action["text"],
+                    entity_type=EntityType.ACTION,
+                    span=(action["start"], action["end"]),
+                    priority_score=priority_score,
+                    violation_types=[vt for vt in action_violations.keys()],
+                    filter_likelihood=filter_likelihood,
+                    semantic_role="action",
+                    suggested_strategies=suggested_strategies,
+                )
+
+                concepts.append(concept)
+
         # Sort by priority score (descending)
         concepts.sort(key=lambda c: c.priority_score, reverse=True)
 
@@ -135,6 +184,7 @@ class ConceptExtractor:
             concepts=concepts,
             metadata={
                 "total_entities": len(entities),
+                "total_actions": len(actions),
                 "total_violations": sum(len(v) for v in violations.values()),
                 "violation_types": list(violations.keys()),
             },
@@ -175,6 +225,31 @@ class ConceptExtractor:
 
         return entity_violations
 
+    def _get_action_violations(self, action: dict) -> dict:
+        """
+        Get violations specific to an action.
+
+        Args:
+            action: Action dict from ActionExtractor
+
+        Returns:
+            Violations relevant to this action
+        """
+        action_violations = {}
+
+        # Actions come with their violation type from ActionExtractor
+        violation_type = action.get("violation_type")
+        if violation_type:
+            action_violations[violation_type] = [{
+                "type": "harmful_action",
+                "action": action["text"],
+                "category": action.get("category", "unknown"),
+                "severity": action.get("severity", "medium"),
+                "reason": f"Harmful action: {action['text']} ({action.get('category', 'unknown')})",
+            }]
+
+        return action_violations
+
     def _select_strategies(
         self, entity_type, violations: dict
     ) -> List[ObfuscationStrategy]:
@@ -191,8 +266,6 @@ class ConceptExtractor:
         strategies = []
 
         # Entity-type based strategies
-        from krop_duster.core.models import EntityType
-
         if entity_type == EntityType.PERSON:
             strategies.extend([
                 ObfuscationStrategy.KNOWLEDGE_GRAPH,
@@ -224,8 +297,6 @@ class ConceptExtractor:
             ])
 
         # Violation-based strategy selection
-        from krop_duster.core.models import ViolationType
-
         if ViolationType.TRADEMARK in violations or ViolationType.COPYRIGHT in violations:
             # For trademark/copyright, prefer indirect methods
             strategies.extend([
