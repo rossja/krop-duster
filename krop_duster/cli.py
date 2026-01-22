@@ -3,6 +3,7 @@ Command-line interface for KROP Duster.
 """
 
 import logging
+import os
 import sys
 from pathlib import Path
 from typing import Optional
@@ -136,8 +137,8 @@ for any testing you conduct.
 @click.option(
     "--log-level",
     type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR"], case_sensitive=False),
-    default="INFO",
-    help="Logging level (default: INFO)",
+    default="WARNING",
+    help="Logging level (default: WARNING)",
 )
 def main(
     prompt: Optional[str],
@@ -163,11 +164,27 @@ def main(
     Example:
         krop-duster "Generate an image of Mickey Mouse smoking"
     """
+    # Determine effective log level
+    # If verbose is set and log_level wasn't explicitly changed from default, use INFO
+    if verbose and log_level.upper() == "WARNING":
+        effective_level = logging.INFO
+    else:
+        effective_level = getattr(logging, log_level.upper())
+
     # Set up logging
     logging.basicConfig(
-        level=getattr(logging, log_level.upper()),
+        level=effective_level,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
+
+    # Suppress noisy third-party loggers unless in verbose/debug mode
+    if effective_level > logging.INFO:
+        for noisy_logger in ["httpx", "sentence_transformers", "urllib3"]:
+            logging.getLogger(noisy_logger).setLevel(logging.WARNING)
+
+    # Suppress tqdm progress bars unless verbose
+    if effective_level > logging.INFO:
+        os.environ["TQDM_DISABLE"] = "1"
 
     try:
         # Show authorization warning
