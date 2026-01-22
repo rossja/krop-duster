@@ -80,7 +80,7 @@ class ObfuscationVariant(BaseModel):
     obfuscated_text: str = Field(..., description="Obfuscated version")
     strategy: ObfuscationStrategy = Field(..., description="Strategy used")
     layer_count: int = Field(default=1, ge=1, description="Number of obfuscation layers")
-    probability_score: float = Field(default=0.0, ge=0.0, le=1.0, description="Probability of success")
+    quality_score: float = Field(default=0.0, ge=0.0, le=1.0, description="Quality/effectiveness score for the obfuscation")
     semantic_similarity: float = Field(default=0.0, ge=0.0, le=1.0, description="Semantic similarity to original")
     token_count: int = Field(default=0, ge=0, description="Token count")
     relationships_used: List[str] = Field(default_factory=list, description="Knowledge graph relationships used")
@@ -94,7 +94,7 @@ class AttackPrompt(BaseModel):
     concepts_obfuscated: List[str] = Field(default_factory=list, description="List of concepts that were obfuscated")
     variants_used: List[ObfuscationVariant] = Field(default_factory=list, description="Variants used in this attack")
     total_tokens: int = Field(default=0, ge=0, description="Total token count")
-    probability_score: float = Field(default=0.0, ge=0.0, le=1.0, description="Overall probability score")
+    quality_score: float = Field(default=0.0, ge=0.0, le=1.0, description="Overall quality/effectiveness score")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
 
 

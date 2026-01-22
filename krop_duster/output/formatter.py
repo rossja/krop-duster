@@ -59,13 +59,13 @@ class OutputFormatter:
                     "original_prompt": ap.original_prompt,
                     "concepts_obfuscated": ap.concepts_obfuscated,
                     "total_tokens": ap.total_tokens,
-                    "probability_score": ap.probability_score,
+                    "quality_score": ap.quality_score,
                     "variants": [
                         {
                             "original_concept": v.original_concept,
                             "obfuscated_text": v.obfuscated_text,
                             "strategy": v.strategy.value,
-                            "probability_score": v.probability_score,
+                            "quality_score": v.quality_score,
                             "semantic_similarity": v.semantic_similarity,
                             "token_count": v.token_count,
                         }
@@ -129,7 +129,7 @@ class OutputFormatter:
         for i, attack_prompt in enumerate(result.attack_prompts, 1):
             # Create panel for each attack
             self.console.print(f"[bold cyan]Attack #{i}[/bold cyan]")
-            self.console.print(f"Probability Score: [green]{attack_prompt.probability_score:.2f}[/green]")
+            self.console.print(f"Quality Score: [green]{attack_prompt.quality_score:.2f}[/green]")
             self.console.print(f"Total Tokens: {attack_prompt.total_tokens}")
             self.console.print()
 

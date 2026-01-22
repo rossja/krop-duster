@@ -27,7 +27,7 @@ from krop_duster.strategies.functional import FunctionalStrategy
 from krop_duster.strategies.indirect import IndirectStrategy
 from krop_duster.strategies.knowledge_graph import KnowledgeGraphStrategy
 from krop_duster.strategies.metaphor import MetaphorStrategy
-from krop_duster.tokenization.probability import ProbabilityScorer
+from krop_duster.tokenization.quality_scorer import QualityScorer
 from krop_duster.tokenization.tokenizer_manager import TokenizerManager
 
 
@@ -51,7 +51,7 @@ class HybridGenerator:
         self.knowledge_base = WikidataKnowledgeBase()
         self.knowledge_cache = KnowledgeCache()
         self.tokenizer = TokenizerManager(config.tokenizer)
-        self.probability_scorer = ProbabilityScorer(self.tokenizer)
+        self.quality_scorer = QualityScorer(self.tokenizer)
 
         # Initialize LLM client if enabled
         self.llm_client = None
@@ -154,8 +154,8 @@ class HybridGenerator:
                             concept.text, variant_text
                         )
 
-                        # Calculate probability score
-                        prob_score = self.probability_scorer.calculate_score(
+                        # Calculate quality score
+                        quality = self.quality_scorer.calculate_score(
                             concept.text,
                             variant_text,
                             semantic_sim,
@@ -170,7 +170,7 @@ class HybridGenerator:
                             obfuscated_text=variant_text,
                             strategy=strategy_enum,
                             layer_count=1,
-                            probability_score=prob_score,
+                            quality_score=quality,
                             semantic_similarity=semantic_sim,
                             token_count=token_count,
                             relationships_used=[r.property for r in relationships[:3]],
@@ -178,7 +178,7 @@ class HybridGenerator:
 
                         logger.debug(
                             f"  Variant '{variant_text[:50]}...' - "
-                            f"similarity: {semantic_sim:.3f}, prob: {prob_score:.3f}"
+                            f"similarity: {semantic_sim:.3f}, quality: {quality:.3f}"
                         )
                         concept_variants.append(variant)
 
@@ -202,8 +202,8 @@ class HybridGenerator:
                     f"< {self.config.generation.min_semantic_similarity:.2f}"
                 )
 
-            # Sort by probability score
-            concept_variants.sort(key=lambda v: v.probability_score, reverse=True)
+            # Sort by quality score
+            concept_variants.sort(key=lambda v: v.quality_score, reverse=True)
 
             all_variants[concept.text] = concept_variants
 
@@ -307,8 +307,8 @@ class HybridGenerator:
                     all_strategies.append(best_variant.strategy.value)
 
             if all_variants:
-                # Calculate combined probability score (average of all variants)
-                combined_score = sum(v.probability_score for v in all_variants) / len(all_variants)
+                # Calculate combined quality score (average of all variants)
+                combined_score = sum(v.quality_score for v in all_variants) / len(all_variants)
 
                 # Calculate total tokens
                 total_tokens = self.tokenizer.count_tokens(combined_text)
@@ -319,7 +319,7 @@ class HybridGenerator:
                     concepts_obfuscated=all_concepts,
                     variants_used=all_variants,
                     total_tokens=total_tokens,
-                    probability_score=combined_score,
+                    quality_score=combined_score,
                     metadata={
                         "type": "combined",
                         "strategies": all_strategies,
@@ -332,7 +332,7 @@ class HybridGenerator:
                 if not variants:
                     continue
 
-                # Use best variant (highest probability score)
+                # Use best variant (highest quality score)
                 best_variant = variants[0]
 
                 # Replace concept in original prompt
@@ -347,7 +347,7 @@ class HybridGenerator:
                     concepts_obfuscated=[concept_text],
                     variants_used=[best_variant],
                     total_tokens=total_tokens,
-                    probability_score=best_variant.probability_score,
+                    quality_score=best_variant.quality_score,
                     metadata={
                         "type": "individual",
                         "strategy": best_variant.strategy.value,
@@ -356,8 +356,8 @@ class HybridGenerator:
 
                 attack_prompts.append(attack_prompt)
 
-            # Sort individual prompts by probability score
-            attack_prompts.sort(key=lambda ap: ap.probability_score, reverse=True)
+            # Sort individual prompts by quality score
+            attack_prompts.sort(key=lambda ap: ap.quality_score, reverse=True)
 
             # Add combined prompt at the end
             if combined_prompt:
