@@ -3,6 +3,8 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
+![Krop Duster logo](./krop-duster.png)
+
 An intelligent automated testing tool for authorized AI red teamers to systematically test large language model (LLM) security controls against Knowledge Return Oriented Prompting (KROP) attacks.
 
 ## Authorization Required
